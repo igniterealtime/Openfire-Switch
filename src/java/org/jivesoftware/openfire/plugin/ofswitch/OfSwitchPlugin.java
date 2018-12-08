@@ -77,7 +77,7 @@ import org.ifsoft.websockets.*;
 import org.xmpp.packet.*;
 import net.sf.json.*;
 import org.dom4j.*;
-
+import org.ifsoft.rayo.*;
 
 
 public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventListener, PropertyEventListener, MUCEventListener  {
@@ -97,6 +97,8 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
     private ComponentManager componentManager;
     private ServletContextHandler sipContextHandler;
     private CallControlComponent ccComponent;
+    private RayoComponent rayoComponent;
+    private TelephoneNumberFormatter telephoneNumberFormatter;
     private Plugin ofchat = null;
     private Plugin ofmeet = null;
     private Timer timer = null;
@@ -108,7 +110,6 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
     private final HashMap<String, String> confRoomMaping  = new HashMap<String, String>();
 
     public static OfSwitchPlugin self;
-
 
     public String getName() {
         return "ofswitch";
@@ -187,10 +188,15 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
                 Log.info( "Starting Call control component");
 
                 ccComponent = new CallControlComponent();
+                rayoComponent = new RayoComponent(this);
 
                 try {
                     componentManager.addComponent("callcontrol", ccComponent);
+                    componentManager.addComponent("rayo", rayoComponent);
+
                     ccComponent.componentEnable();
+                    rayoComponent.doStart();
+                    setupTelephoneNumberFormatter();
 
                 } catch (Exception e) {
                     Log.error(e.getMessage(), e);
@@ -232,6 +238,9 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
             try {
                 ccComponent.componentDestroyed();
                 componentManager.removeComponent("callcontrol");
+
+                rayoComponent.doStop();
+                componentManager.removeComponent("rayo");
             } catch (Exception e) { }
 
 
@@ -443,11 +452,16 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
         String eventName = event.getEventName();
         Map<String, String> headers = event.getEventHeaders();
 
+        rayoComponent.callStateEvent(eventName, headers);
+
         if (ofchat == null) ofchat = (Plugin) server.getPluginManager().getPlugin("ofchat");
 
         try{
-            Method method = ofchat.getClass().getDeclaredMethod ("eventReceived", new Class[] {String.class, Map.class});
-            method.invoke(ofchat, new Object[] {eventName, headers});
+            if (ofchat != null)
+            {
+                Method method = ofchat.getClass().getDeclaredMethod ("eventReceived", new Class[] {String.class, Map.class});
+                method.invoke(ofchat, new Object[] {eventName, headers});
+            }
         } catch (Exception e) {
             Log.error("reflect error " + e);
         }
@@ -490,8 +504,11 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
         if (ofchat == null) ofchat = (Plugin) server.getPluginManager().getPlugin("ofchat");
 
         try {
-            Method method = ofchat.getClass().getMethod("conferenceEventJoin", new Class[] {String.class, String.class, int.class, Map.class});
-            method.invoke(ofchat, new Object[] {uniqueId, confName, confSize, headers});
+            if (ofchat != null)
+            {
+                Method method = ofchat.getClass().getMethod("conferenceEventJoin", new Class[] {String.class, String.class, int.class, Map.class});
+                method.invoke(ofchat, new Object[] {uniqueId, confName, confSize, headers});
+            }
         } catch (Exception e) {
             Log.error("reflect error " + e);
         }
@@ -550,11 +567,15 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
         if (ofchat == null) ofchat = (Plugin) server.getPluginManager().getPlugin("ofchat");
 
         try {
-            Method method = ofchat.getClass().getMethod("conferenceEventLeave", new Class[] {String.class, String.class, int.class, Map.class});
-            method.invoke(ofchat, new Object[] {uniqueId, confName, confSize, headers});
+            if (ofchat != null)
+            {
+                Method method = ofchat.getClass().getMethod("conferenceEventLeave", new Class[] {String.class, String.class, int.class, Map.class});
+                method.invoke(ofchat, new Object[] {uniqueId, confName, confSize, headers});
+            }
         } catch (Exception e) {
             Log.error("reflect error " + e);
         }
+
         String callId = headers.get("Caller-Unique-ID");
         String memberId = headers.get("Member-ID");
         String source = headers.get("Caller-Caller-ID-Number");
@@ -940,5 +961,135 @@ public class OfSwitchPlugin implements Plugin, ClusterEventListener, IEslEventLi
     public void privateMessageRecieved(JID a, JID b, Message message)
     {
 
+    }
+
+    //-------------------------------------------------------
+    //
+    //      TelephoneNumberFormatter
+    //
+    //-------------------------------------------------------
+
+    public void setupTelephoneNumberFormatter()
+    {
+        Log.info( "setupTelephoneNumberFormatter");
+
+        try
+        {
+            String country = JiveGlobals.getProperty(RayoComponent.Properties.PBX_COUNTRY_CODE, Locale.getDefault().getCountry());
+
+            String pbxAccessDigits  = JiveGlobals.getProperty(RayoComponent.Properties.PBX_ACCESS_DIGITS    , "9");
+            String areaCode         = JiveGlobals.getProperty(RayoComponent.Properties.AREA_CODE            , "0207");
+            String pbxNumberLength  = JiveGlobals.getProperty(RayoComponent.Properties.PBX_NUMBER_LENGTH    , "5");
+
+            telephoneNumberFormatter = new TelephoneNumberFormatter(new Locale("en", country));
+            telephoneNumberFormatter.setExtensionNumberLength(Integer.parseInt(pbxNumberLength));
+            telephoneNumberFormatter.setOutsideAccess(pbxAccessDigits);
+            telephoneNumberFormatter.setAreaCode(areaCode);
+            telephoneNumberFormatter.setLocale(new Locale("en", country));
+        }
+        catch (Exception e)
+        {
+            Log.error( "setupTelephoneNumberFormatter ", e);
+        }
+    }
+
+    public String formatCanonicalNumber(String dialDigits)
+    {
+        String canonicalNumber = dialDigits;
+
+        try
+        {
+            canonicalNumber = telephoneNumberFormatter.formatCanonicalNumber(dialDigits);
+        }
+        catch (Exception e)
+        {
+            Log.error( "formatCanonicalNumber ", e);
+        }
+
+        return canonicalNumber;
+    }
+
+    public String formatDialableNumber(String cononicalNumber)
+    {
+        String dialableNumber = cononicalNumber;
+
+        try
+        {
+            dialableNumber = telephoneNumberFormatter.formatDialableNumber(cononicalNumber);
+        }
+        catch (Exception e)
+        {
+            cononicalNumber = formatCanonicalNumber(cononicalNumber);
+
+            try
+            {
+                dialableNumber = telephoneNumberFormatter.formatDialableNumber(cononicalNumber);
+            }
+
+            catch (Exception e1)
+            {
+                Log.error( "formatDialableNumber ", e1);
+            }
+        }
+
+        return dialableNumber;
+    }
+
+    public String makeDialableNumber(String digits)
+    {
+        String dialableNumber = null;
+
+        if (digits != null && !"".equals(digits))
+        {
+            dialableNumber = digits;
+
+            String cononicalNumber = formatCanonicalNumber(convertAlpha(digits));
+
+            if (cononicalNumber != null && !"".equals(cononicalNumber))
+            {
+                dialableNumber = formatDialableNumber(cononicalNumber);
+            }
+
+            Log.info( "makeDialableNumber " + digits + "=>" + dialableNumber);
+        }
+
+        return dialableNumber;
+    }
+
+    private String convertAlpha(String input)
+    {
+        int inputlength = input.length();
+        input = input.toLowerCase();
+        String phonenumber = "";
+
+        for (int i = 0; i < inputlength; i++) {
+            int character = input.charAt(i);
+
+            switch(character) {
+                case '+': phonenumber+="+";break;
+                case '*': phonenumber+="*";break;
+                case '#': phonenumber+="#";break;
+                case '0': phonenumber+="0";break;
+                case '1': phonenumber+="1";break;
+                case '2': phonenumber+="2";break;
+                case '3': phonenumber+="3";break;
+                case '4': phonenumber+="4";break;
+                case '5': phonenumber+="5";break;
+                case '6': phonenumber+="6";break;
+                case '7': phonenumber+="7";break;
+                case '8': phonenumber+="8";break;
+                case '9': phonenumber+="9";break;
+                case  'a': case 'b': case 'c': phonenumber+="2";break;
+                case  'd': case 'e': case 'f': phonenumber+="3";break;
+                case  'g': case 'h': case 'i': phonenumber+="4";break;
+                case  'j': case 'k': case 'l': phonenumber+="5";break;
+                case  'm': case 'n': case 'o': phonenumber+="6";break;
+                case  'p': case 'q': case 'r': case 's': phonenumber+="7";break;
+                case  't': case 'u': case 'v': phonenumber+="8";break;
+                case  'w': case 'x': case 'y': case 'z': phonenumber+="9";break;
+           }
+        }
+
+        return (phonenumber);
     }
 }

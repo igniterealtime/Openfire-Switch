@@ -21,8 +21,8 @@
     <name>Openfire Switch</name>
     <description>Media Control Unit for media mixing and routing using FreeSWITCH</description>
     <author>Ignite Realtime</author>
-    <version>0.9.4</version>
-    <date>07/17/2018</date>
+    <version>0.9.4 Release 6</version>
+    <date>12/08/2018</date>
     <minServerVersion>4.1.5</minServerVersion>
     <minJavaVersion>1.8</minJavaVersion>    
     <adminconsole>
@@ -39,7 +39,8 @@
                 <item id="freeswitch-queues"        name="${config.freeswitch.queues.name}"     description="${config.freeswitch.queues.description}"                   url="freeswitch-queues.jsp"/>                
                 <item id="freeswitch-tiers"         name="${config.freeswitch.tiers.name}"      description="${config.freeswitch.tiers.description}"                    url="freeswitch-tiers.jsp"/>                
                 <item id="freeswitch-verto"         name="${config.freeswitch.verto.name}"      description="${config.freeswitch.verto.description}"                    url="freeswitch-verto.jsp"/>                
-                <item id="freeswitch-helper"        name="${config.freeswitch.helper.name}"     description="${config.freeswitch.helper.description}"                   url="freeswitch-helper.jsp"/>                
+                <item id="freeswitch-helper"        name="${config.freeswitch.helper.name}"     description="${config.freeswitch.helper.description}"                   url="freeswitch-helper.jsp"/>   
+                <item id="freeswitch-check-number"  name="${config.freeswitch.check.number}"    description="${config.freeswitch.check.number}"                         url="freeswitch-check-number-format"/>                                                
              </sidebar>                           
         </tab>
     </adminconsole>    
